@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>CO2</title>
+</head>
+<body>
+
+<input id="valR" type="range" min="1995" max="2011" value="1995" step="1" oninput="showVal(this.value);" onchange="showVal(this.value);" />
+  <span id="range">1995</span>
+  <img src='' id="img">
+
+  <script>
+
+    var val = document.getElementById("valR").value;
+    document.getElementById("range").innerHTML=val;
+    document.getElementById("img").src = "CO2 emissions and government expenditure per head in " + val + ".png";
+    function showVal(newVal){
+      document.getElementById("range").innerHTML=newVal;
+      document.getElementById("img").src = "CO2 emissions and government expenditure per head in " + newVal+ ".png";
+    }
+  </script>
+
+</body>
+</html>
