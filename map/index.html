@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <script src="jquery-2.1.3.min.js"></script>
+  <style>
+    #map {
+      background-color: #fff;
+      border: 1px solid #ccc;
+    }
+    .background {
+      fill: none;
+      pointer-events: all;
+    }
+    #countries, #states {
+      fill: #cde;
+      stroke: #fff;
+      stroke-linejoin: round;
+      stroke-linecap: round;
+    }
+    pre.prettyprint {
+      border: 1px solid #ccc;
+      margin-bottom: 0;
+      padding: 9.5px;
+    }
+
+    .legDiv {
+      height: 3em;
+      width: 6em;
+      display: inline-block;
+      text-align: center;
+      line-height: 3em;
+      color: white;
+    }
+
+    .hoverCountry:hover {
+      fill: red;
+      stroke-width: 0px;
+      transition: 1s;
+    }
+  </style>
+</head>
+<body>
+  <h1>Hover country with mouse for exact value tooltip and click to zoom</h1>
+  legend: <span id="legend1"></span>
+  <div id="leg0" class="legDiv">0</div>
+  <div id="leg2" class="legDiv">0.2</div>
+  <div id="leg4" class="legDiv">0.4</div>
+  <div id="leg6" class="legDiv">0.6</div>
+  <div id="leg8" class="legDiv">0.8</div>
+  <div id="leg10" class="legDiv">1</div>
+  <select id="valS" value="CO2" onchange="loadCSV(this.value);colourMap();">
+   <option value="CO2">CO2 emission (per capita)</option>
+   <option value="gdp2">GDP (per capita)</option>
+   <option value="gov">Goverment expenditure on health (per capita)</option>
+ </select> 
+
+ <input id="valR" type="range" min="1995" max="2010" value="1995" step="1" oninput="showYear(this.value);" onchange="showYear(this.value);" />
+ <span id="range"></span>
+ <div id="map"></div>
+ <script src="d3.min.js"></script>
+ <script src="topojson.v1.min.js"></script>
+ <script>
+   // Map drawing stuff:
+   var m_width = $("#map").width(),
+   width = 938,
+   height = 500,
+   country,
+   state;
+
+   var projection = d3.geo.mercator()
+   .scale(150)
+   .translate([width / 2, height / 1.5]);
+
+   var path = d3.geo.path()
+   .projection(projection);
+
+   var svg = d3.select("#map").append("svg")
+   .attr("preserveAspectRatio", "xMidYMid")
+   .attr("viewBox", "0 0 " + width + " " + height)
+   .attr("width", m_width)
+   .attr("height", m_width * height / width);
+
+   svg.append("rect")
+   .attr("class", "background")
+   .attr("width", width)
+   .attr("height", height)
+   .on("click", country_clicked);
+
+   var g = svg.append("g");
+
+   d3.json("json/countries.topo.json", function(error, us) {
+    g.append("g")
+    .attr("id", "countries")
+    .selectAll("path")
+    .data(topojson.feature(us, us.objects.countries).features)
+    .enter()
+    .append("path")
+    .attr("id", function(d) { return illegalCharToUnderscore(d.properties.name); })
+    .attr("d", path)
+    .attr("class", "hoverCountry")
+    .on("click", country_clicked);
+  });
+
+      // Helper functions:
+      function replaceAll(string, find, replace) {
+        return string.replace(new RegExp(find, 'g'), replace);
+      }
+
+      function illegalCharToUnderscore(str) {
+        str = replaceAll(str, ' ', '_');
+        str = replaceAll(str, ',', '_');
+        str = replaceAll(str, '\\.', '_');
+        str = replaceAll(str, '\'', '_');
+        str = replaceAll(str, '\\(', '_');
+          str = replaceAll(str, '\\)', '_');
+          return str;
+        }
+
+        // Update the map after a new year has been selected with the slider:
+        function showYear(val) {
+          document.getElementById("range").innerHTML=val;
+          year = val;
+          colourMap();
+        }
+
+        var csvData = {}, gdps = {}, healths = {};
+
+        var years = d3.range(1995, 2011);
+
+        var year = document.getElementById("valR").value;
+        document.getElementById("range").innerHTML=year;
+
+        var max_val = 0;
+        var start_colour = "#ffffcc";
+        var end_colour = "#800026";
+        // Different colour schemes used for map types:
+        var end_colours = {
+          CO2: "#800026",
+          gov: "#004529",
+          gdp2: "#081d58"
+        };
+
+
+        // Load CSV file dynamically, from selection in drop-down menu:
+        function loadCSV(fileName) {
+          years.forEach(function(yr) {
+            d3.csv(fileName + ".csv")
+            .row(function(d) {
+              var tmp = {};
+              var tmp_name = illegalCharToUnderscore(d['name']);
+              tmp[tmp_name] =  d[yr];
+              return tmp; })
+            .get(function(error, rows) { csvData[yr] = rows; });
+          });
+        };
+
+        // Zopom to a specific location:
+        function zoom(xyz) {
+          g.transition()
+          .duration(750)
+          .attr("transform", "translate(" + projection.translate() + ")scale(" + xyz[2] + ")translate(-" + xyz[0] + ",-" + xyz[1] + ")")
+          .selectAll(["#countries", "#states", "#cities"])
+          .style("stroke-width", 1.0 / xyz[2] + "px")
+          .selectAll(".city")
+          .attr("d", path.pointRadius(20.0 / xyz[2]));
+        }
+
+        // Function to calculate center of country:
+        function get_xyz(d) {
+          var bounds = path.bounds(d);
+          var w_scale = (bounds[1][0] - bounds[0][0]) / width;
+          var h_scale = (bounds[1][1] - bounds[0][1]) / height;
+          var z = .96 / Math.max(w_scale, h_scale);
+          var x = (bounds[1][0] + bounds[0][0]) / 2;
+          var y = (bounds[1][1] + bounds[0][1]) / 2 + (height / z / 6);
+          return [x, y, z];
+        }
+
+        // Function that zooms on countries when cicked:
+        function country_clicked(d) {
+          g.selectAll(["#states", "#cities"]).remove();
+          state = null;
+
+          if (country) {
+            g.selectAll("#" + country.id).style('display', null);
+          }
+
+          if (d && country !== d) {
+            var xyz = get_xyz(d);
+            country = d;
+
+            
+            zoom(xyz);
+            
+          } else {
+            var xyz = [width / 2, height / 1.5, 1];
+            country = null;
+            zoom(xyz);
+          }
+        }
+
+        // Resize map if window gets resized:
+        $(window).resize(function() {
+          var w = $("#map").width();
+          svg.attr("width", w);
+          svg.attr("height", w * height / width);
+        });
+
+        // Colour in countries in the colour intensity corresnponding to their gdp, co2, gov value:
+        function colourMap() {
+          var currentYear = csvData[year];
+      // find maximum for curent year:
+      max_val = 0;
+      currentYear.forEach(function(d) {
+        var key = Object.keys(d)[0];
+        var val = parseFloat(d[key]);
+        if (val > max_val) {
+          max_val = val;
+        }
+      });
+      var scaler = 0.85/max_val;
+      currentYear.forEach(function(d) {
+        var key = Object.keys(d)[0];
+        var val = d[key];
+        if(val != "") {
+          var col_val = val*scaler;
+          var colour = d3.interpolateLab(start_colour, end_colours[document.getElementById("valS").value])(col_val+0.15);
+          $('#'+key).attr('title', key + ': ' + val).attr('fill', colour);
+        } 
+      });
+      // Update legend:
+      $('#leg0').css('background-color', d3.interpolateLab(start_colour, end_colours[document.getElementById("valS").value])(0+0.15));
+      $('#leg2').css('background-color', d3.interpolateLab(start_colour, end_colours[document.getElementById("valS").value])(0.2+0.15)).html((max_val*0.2).toFixed(2));
+      $('#leg4').css('background-color', d3.interpolateLab(start_colour, end_colours[document.getElementById("valS").value])(0.4+0.15)).html((max_val*0.4).toFixed(2));
+      $('#leg6').css('background-color', d3.interpolateLab(start_colour, end_colours[document.getElementById("valS").value])(0.6+0.15)).html((max_val*0.6).toFixed(2));
+      $('#leg8').css('background-color', d3.interpolateLab(start_colour, end_colours[document.getElementById("valS").value])(0.8+0.15)).html((max_val*0.8).toFixed(2));
+      $('#leg10').css('background-color', d3.interpolateLab(start_colour, end_colours[document.getElementById("valS").value])(1+0.15)).html((max_val).toFixed(2));
+    };
+
+    // On initila load, load CO2 data and colour map:
+    loadCSV('CO2');
+    $(function() {
+      colourMap();
+    });
+  </script>
+</body>
+</html>
